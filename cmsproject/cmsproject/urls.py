@@ -16,8 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
- 
+
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('', include('appcms.urls')),  # Replace 'your_app_name' with your actual app name
+    path('admin/', admin.site.urls),           # Admin interface
+    path('', include('appcms.urls')),          # Include URLs from the 'appcms' app
 ]
