@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ManagerRegisterView, SupervisorRegisterView,ManagerProfileView, CustomAuthToken, ProjectViewSet, TaskViewSet
+from .views import ManagerRegisterView,SupervisorProfileView,  SupervisorRegisterView,ManagerProfileView, CustomAuthToken, ProjectViewSet, TaskViewSet
 
 urlpatterns = [
     path('register/manager/', ManagerRegisterView.as_view(), name='manager-register'),
@@ -9,5 +9,6 @@ urlpatterns = [
     path('projects/<int:pk>/', ProjectViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='project-detail'),
     path('tasks/', TaskViewSet.as_view({'get': 'list', 'post': 'create'}), name='task-list'),
     path('tasks/<int:pk>/', TaskViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='task-detail'),
+    path('profile/', SupervisorProfileView.as_view(), name='supervisor_profile'),
     path('profile/', ManagerProfileView.as_view(), name='manager-profile'),
 ]

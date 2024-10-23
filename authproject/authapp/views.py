@@ -71,3 +71,16 @@ class ManagerProfileView(generics.RetrieveAPIView):
             "role": user.role,
              
         })
+    
+class SupervisorProfileView(generics.RetrieveAPIView):
+    serializer_class = SupervisorSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+        return Response({
+            "username": user.username,
+            "role": user.role,
+             
+        })   
