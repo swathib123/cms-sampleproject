@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 # Custom User model
 class User(AbstractUser):
@@ -41,9 +42,14 @@ class Project(models.Model):
 class Task(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='tasks')
     name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)  # Made description optional
-    deadline = models.DateField()
-    phase = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)  # Description is optional
+    start_date = models.DateField(default=timezone.now)  # Set a default value
+    end_date = models.DateField()
+    supervisor = models.ForeignKey(Supervisor, on_delete=models.SET_NULL, null=True, related_name='tasks')
+    image = models.ImageField(upload_to='task_images/', blank=True, null=True)
 
     def __str__(self):
         return f"Task: {self.name} for Project: {self.project.name}"
+
+    class Meta:
+        ordering = ['start_date']  # Order tasks by start date

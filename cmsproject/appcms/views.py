@@ -61,7 +61,7 @@ class CustomAuthToken(ObtainAuthToken):
 # User detail view to get current user info
 class UserDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
-
+    
     def get(self, request, *args, **kwargs):
         user = request.user
 
@@ -77,21 +77,27 @@ class UserDetailView(generics.RetrieveAPIView):
 # Project viewset for managing projects
 class ProjectViewSet(viewsets.ModelViewSet):
     serializer_class = ProjectSerializer
-    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Optionally filter projects based on the user's role
         if self.request.user.is_authenticated:
-            return Project.objects.all()  # Adjust as necessary based on relationships
+            # Return projects based on user's role
+            if self.request.user.role == 'manager':
+                return Project.objects.filter(supervisor__user=self.request.user)
+            elif self.request.user.role == 'supervisor':
+                return Project.objects.filter(supervisor__user=self.request.user)
+            return Project.objects.all()
         return Project.objects.none()
 
 # Task viewset for managing tasks
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
-    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Optionally filter tasks based on the user's role
         if self.request.user.is_authenticated:
-            return Task.objects.all()  # Adjust as necessary based on relationships
+            # Return tasks based on user's role
+            if self.request.user.role == 'supervisor':
+                return Task.objects.filter(project__supervisor__user=self.request.user)
+            return Task.objects.all()
         return Task.objects.none()
