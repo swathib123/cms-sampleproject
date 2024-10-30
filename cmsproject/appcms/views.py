@@ -12,7 +12,7 @@ class ManagerRegisterView(generics.CreateAPIView):
     serializer_class = ManagerSerializer
 
     def create(self, request, *args, **kwargs):
-        user_data = request.data
+        user_data = request.data.get('user')  # Extract user data from request
         user_serializer = UserSerializer(data=user_data)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
@@ -31,7 +31,7 @@ class SupervisorRegisterView(generics.CreateAPIView):
     serializer_class = SupervisorSerializer
 
     def create(self, request, *args, **kwargs):
-        user_data = request.data
+        user_data = request.data.get('user')  # Extract user data from request
         user_serializer = UserSerializer(data=user_data)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
@@ -53,7 +53,7 @@ class CustomAuthToken(ObtainAuthToken):
         # Get user details
         user_data = {
             'username': request.user.username,
-            'role': request.user.role,  # Assuming you have a role field in your User model
+            'role': request.user.role,
         }
 
         return Response({'token': token, 'user': user_data})
@@ -65,6 +65,7 @@ class UserDetailView(generics.RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         user = request.user
 
+        # Check for manager or supervisor profiles
         if hasattr(user, 'manager_profile'):
             serializer = ManagerSerializer(user.manager_profile)
             return Response(serializer.data)

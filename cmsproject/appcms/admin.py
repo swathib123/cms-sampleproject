@@ -8,4 +8,3 @@ admin.site.register(Manager)
 admin.site.register(Supervisor)
 admin.site.register(Project)
 admin.site.register(Task)
- 
