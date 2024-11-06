@@ -18,6 +18,6 @@ from django.contrib import admin
 from django.urls import path, include
 
 urlpatterns = [
-    path('admin/', admin.site.urls),           # Admin interface
-    path('', include('appcms.urls')),          # Include URLs from the 'appcms' app
+    path('admin/', admin.site.urls),
+    path('',include('appcms.urls')),
 ]

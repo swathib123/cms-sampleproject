@@ -1,29 +1,50 @@
-from rest_framework import generics, viewsets
+from rest_framework import generics, viewsets, permissions
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.permissions import IsAuthenticated
-from .models import Manager, Supervisor, Project, Task
-from .serializers import ManagerSerializer, SupervisorSerializer, UserSerializer, ProjectSerializer, TaskSerializer
+from .models import Manager, Supervisor, Project, Task, User
+from .serializers import ManagerSerializer, SupervisorSerializer,WorkerSerializer,ResourceSerializer, UserSerializer, ProjectSerializer, TaskSerializer
+from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
+from django.db import IntegrityError
+from .models import Manager,Resource,Worker
+from rest_framework import status
+ 
 
-# Manager registration view
 class ManagerRegisterView(generics.CreateAPIView):
     queryset = Manager.objects.all()
     serializer_class = ManagerSerializer
 
     def create(self, request, *args, **kwargs):
-        user_data = request.data.get('user')  # Extract user data from request
+        user_data = request.data.pop('user')  # Assuming user data is nested
+        
         user_serializer = UserSerializer(data=user_data)
         user_serializer.is_valid(raise_exception=True)
-        user = user_serializer.save()
 
-        # Create the manager profile
-        manager = Manager.objects.create(user=user)
+        try:
+            user = user_serializer.save()  # Create the user
 
-        # Generate token for the user
-        token, _ = Token.objects.get_or_create(user=user)
+            department = request.data.get('department')
+            phone_number = request.data.get('phone_number')
 
-        return Response({'token': token.key, 'manager_id': manager.id})
+            if not department or not phone_number:
+                return Response({"error": "Department and phone number are required."}, status=400)
+
+            manager = Manager.objects.create(
+                user=user,
+                department=department,
+                phone_number=phone_number
+            )  # Create the manager profile
+
+            # Generate token for the user
+            token, created = Token.objects.get_or_create(user=user)
+
+            return Response({'message': 'Successfully registered as a manager.',
+                             'token': token.key, 
+                             'manager_id': manager.id}, status=status.HTTP_201_CREATED)
+        
+        except IntegrityError:
+            return Response({"error": "User or manager profile could not be created due to integrity issues."}, status=400)
 
 # Supervisor registration view
 class SupervisorRegisterView(generics.CreateAPIView):
@@ -31,74 +52,68 @@ class SupervisorRegisterView(generics.CreateAPIView):
     serializer_class = SupervisorSerializer
 
     def create(self, request, *args, **kwargs):
-        user_data = request.data.get('user')  # Extract user data from request
+        user_data = request.data.pop('user')  # Assuming user data is nested
         user_serializer = UserSerializer(data=user_data)
         user_serializer.is_valid(raise_exception=True)
-        user = user_serializer.save()
-
-        # Create the supervisor profile
-        supervisor = Supervisor.objects.create(user=user)
-
+        user = user_serializer.save()  # Create the user
+        
+        supervisor = Supervisor.objects.create(user=user)  # Create the supervisor profile
+        
         # Generate token for the user
-        token, _ = Token.objects.get_or_create(user=user)
-
-        return Response({'token': token.key, 'supervisor_id': supervisor.id})
+        token, created = Token.objects.get_or_create(user=user)
+        
+        return Response({'message': 'Successfully registered as a supervisor.',
+                         'token': token.key, 
+                         'supervisor_id': supervisor.id}, status=status.HTTP_201_CREATED)
 
 # Custom login view to obtain token
 class CustomAuthToken(ObtainAuthToken):
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         token = response.data['token']
-        
-        # Get user details
-        user_data = {
-            'username': request.user.username,
-            'role': request.user.role,
-        }
-
-        return Response({'token': token, 'user': user_data})
-
-# User detail view to get current user info
-class UserDetailView(generics.RetrieveAPIView):
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request, *args, **kwargs):
-        user = request.user
-
-        # Check for manager or supervisor profiles
-        if hasattr(user, 'manager_profile'):
-            serializer = ManagerSerializer(user.manager_profile)
-            return Response(serializer.data)
-        elif hasattr(user, 'supervisor_profile'):
-            serializer = SupervisorSerializer(user.supervisor_profile)
-            return Response(serializer.data)
-
-        return Response({'detail': 'User is not a manager or supervisor'}, status=403)
+        return Response({'message': 'Login successful!',
+                         'token': token}, status=status.HTTP_200_OK)
 
 # Project viewset for managing projects
 class ProjectViewSet(viewsets.ModelViewSet):
+    queryset = Project.objects.all()
     serializer_class = ProjectSerializer
-    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        if self.request.user.is_authenticated:
-            # Return projects based on user's role
-            if self.request.user.role == 'manager':
-                return Project.objects.filter(supervisor__user=self.request.user)
-            elif self.request.user.role == 'supervisor':
-                return Project.objects.filter(supervisor__user=self.request.user)
-            return Project.objects.all()
-        return Project.objects.none()
 
-# Task viewset for managing tasks
+
+from rest_framework import viewsets
+from rest_framework.response import Response
+from rest_framework.decorators import action
+from .models import Resource, Worker, Task2
+from .serializers import ResourceSerializer, WorkerSerializer, TaskSerializer
+
+# Resource Viewset
+class ResourceViewSet(viewsets.ModelViewSet):
+    queryset = Resource.objects.all()
+    serializer_class = ResourceSerializer
+
+# Worker Viewset
+class WorkerViewSet(viewsets.ModelViewSet):
+    queryset = Worker.objects.all()
+    serializer_class = WorkerSerializer
+
+# Task Viewset
 class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task2.objects.all()
     serializer_class = TaskSerializer
-    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        if self.request.user.is_authenticated:
-            # Return tasks based on user's role
-            if self.request.user.role == 'supervisor':
-                return Task.objects.filter(project__supervisor__user=self.request.user)
-            return Task.objects.all()
-        return Task.objects.none()
+   
+
+
+class ManagerProfileView(generics.RetrieveAPIView):
+    serializer_class = ManagerSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+         
+        return Response({
+            "username": user.username,
+            "role": user.role,
+             
+        })

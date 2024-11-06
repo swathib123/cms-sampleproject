@@ -1,30 +1,21 @@
 from django.urls import path
-from .views import (
-    ManagerRegisterView,
-    SupervisorRegisterView,
-    CustomAuthToken,
-    ProjectViewSet,
-    TaskViewSet,
-    UserDetailView
-)
-
+from .views import ManagerRegisterView, SupervisorRegisterView,ManagerProfileView, CustomAuthToken, ProjectViewSet, TaskViewSet,ResourceViewSet,WorkerViewSet
+from django.conf import settings
+from django.conf.urls.static import static
 urlpatterns = [
-    # User registration
     path('register/manager/', ManagerRegisterView.as_view(), name='manager-register'),
     path('register/supervisor/', SupervisorRegisterView.as_view(), name='supervisor-register'),
-
-    # User login
     path('login/', CustomAuthToken.as_view(), name='login'),
-
-    # User details for both manager and supervisor
-    path('user/details/', UserDetailView.as_view(), name='user-details'),
-
-    # Project endpoints
     path('projects/', ProjectViewSet.as_view({'get': 'list', 'post': 'create'}), name='project-list'),
     path('projects/<int:pk>/', ProjectViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='project-detail'),
-
-    # Task endpoints
     path('tasks/', TaskViewSet.as_view({'get': 'list', 'post': 'create'}), name='task-list'),
     path('tasks/<int:pk>/', TaskViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='task-detail'),
+    path('profile/', ManagerProfileView.as_view(), name='manager-profile'),
+    path('resources/', ResourceViewSet.as_view({'get': 'list', 'post': 'create'}), name='resource-list'),
+    path('resources/<int:pk>/', ResourceViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='resource-detail'),
+    path('workers/', WorkerViewSet.as_view({'get': 'list', 'post': 'create'}), name='worker-list'),
+    path('workers/<int:pk>/', WorkerViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='worker-detail'),
+
 ]
-#end...
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

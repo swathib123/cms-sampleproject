@@ -1,7 +1,5 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
-from django.utils import timezone
-from django.core.exceptions import ValidationError
 
 # Custom User model
 class User(AbstractUser):
@@ -11,22 +9,15 @@ class User(AbstractUser):
     ]
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
 
-    def __str__(self):
-        return self.username
-
 # Manager model
 class Manager(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='manager_profile')
-
-    def __str__(self):
-        return f"{self.user.username} - Manager"
+    department = models.CharField(max_length=255)
+    phone_number = models.CharField(max_length=15)
 
 # Supervisor model
 class Supervisor(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='supervisor_profile')
-
-    def __str__(self):
-        return f"{self.user.username} - Supervisor"
 
 # Project model
 class Project(models.Model):
@@ -34,35 +25,92 @@ class Project(models.Model):
     location = models.CharField(max_length=255)
     budget = models.DecimalField(max_digits=10, decimal_places=2)
     timeline = models.DateField()
-    supervisor = models.ForeignKey(Supervisor, on_delete=models.SET_NULL, null=True, related_name='projects')
+    supervisor = models.ForeignKey(Supervisor, on_delete=models.SET_NULL, null=True)
+    manager = models.ForeignKey(Manager,on_delete=models.CASCADE, null=True)
 
-    def clean(self):
-        if self.budget <= 0:
-            raise ValidationError("Budget must be a positive value.")
+
+class Resource(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    quantity = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return self.name
+    
+class Worker(models.Model):
+    name = models.CharField(max_length=100)
+    aadhar_number = models.CharField(max_length=12, unique=True)  # Assuming Aadhar number is unique
+    is_working = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
 
-# Task model
 class Task(models.Model):
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='tasks')
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)  # Description is optional
-    start_date = models.DateField(default=timezone.now)  # Set a default value
+    name = models.CharField(max_length=100)
+    resource = models.ForeignKey(Resource, on_delete=models.CASCADE)
+    quantity_used = models.PositiveIntegerField()
+    worker = models.ForeignKey(Worker, on_delete=models.SET_NULL, null=True, blank=True)
+    project = models.ForeignKey(Project, related_name='tasks', on_delete=models.CASCADE)
+    start_date = models.DateField()
     end_date = models.DateField()
-    supervisor = models.ForeignKey(Supervisor, on_delete=models.SET_NULL, null=True, related_name='tasks')
-    image = models.ImageField(upload_to='task_images/', blank=True, null=True)
+    image = models.ImageField(upload_to='tasks/images/', null=True, blank=True)
+    supervisor = models.ForeignKey(Supervisor, related_name='tasks', on_delete=models.CASCADE)
+    description = models.TextField() 
 
-    def clean(self):
-        if self.end_date < self.start_date:
-            raise ValidationError("End date cannot be earlier than start date.")
+    def __str__(self):
+        return self.name
+    
+class Task1(models.Model):
+    name = models.CharField(max_length=255)
+    resource = models.ForeignKey(Resource,null=True, blank=True, on_delete=models.CASCADE)
+    quantity_used = models.PositiveIntegerField()
+    worker = models.ForeignKey(Worker, null=True, blank=True, on_delete=models.SET_NULL)
+    project_id = models.CharField(max_length=255)
+    supervisor_id = models.CharField(max_length=255)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    image = models.ImageField(upload_to='tasks/', null=True, blank=True)
+    description = models.TextField()
 
     def save(self, *args, **kwargs):
-        self.clean()  # Call clean method before saving
+        # Update resource quantity when task is saved
+        if self.worker and not self.worker.is_working:
+            self.worker = None  # If worker is not working, set to None
+
+        # Reduce resource quantity
+        if self.resource:
+            self.resource.quantity -= self.quantity_used
+            self.resource.save()
+        
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Task: {self.name} for Project: {self.project.name}"
+        return self.name
+    
+class Task2(models.Model):
+    name = models.CharField(max_length=255)
+    resource = models.ForeignKey(Resource, on_delete=models.CASCADE)
+    quantity_used = models.PositiveIntegerField()
+    worker = models.ForeignKey(Worker, null=True, blank=True, on_delete=models.SET_NULL)
+    project_id = models.CharField(max_length=255)
+    supervisor_id = models.CharField(max_length=255)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    image = models.ImageField(upload_to='tasks/', null=True, blank=True)
+    description = models.TextField()
 
-    class Meta:
-        ordering = ['start_date']  # Order tasks by start date
+    def save(self, *args, **kwargs):
+        # Ensure that the task has a valid resource before saving
+        if not self.resource:
+            raise ValueError("A valid resource is required for the task.")
+        # Check if resource has enough quantity
+        if self.resource.quantity < self.quantity_used:
+            raise ValueError(f"Insufficient quantity for resource {self.resource.name}.")
+        
+        # Update resource quantity
+        self.resource.quantity -= self.quantity_used
+        self.resource.save()
+
+        super().save(*args, **kwargs)
+        
+    def __str__(self):
+        return self.name
