@@ -7,8 +7,7 @@ from .serializers import ManagerSerializer, SupervisorSerializer, UserSerializer
 from django.db import IntegrityError
 from django.db import transaction
 from rest_framework.permissions import IsAuthenticated
-
-
+from rest_framework.exceptions import ValidationError
 
 # Manager Registration View
 class ManagerRegisterView(generics.CreateAPIView):

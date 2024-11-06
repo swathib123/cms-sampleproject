@@ -60,7 +60,6 @@ class Worker(models.Model):
         return self.name
 
 # Task2 model
-# If Task1 is still in the file, remove it.
 from django.db import transaction
 
 class Task2(models.Model):
