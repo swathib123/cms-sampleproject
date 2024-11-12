@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import User, Manager, Supervisor, Project, Task, Resource, Worker, Document
+from .models import User, Manager, Supervisor, Project, Task, Resource, Worker, Document, Media
+
 
 # User Serializer
 class UserSerializer(serializers.ModelSerializer):
@@ -31,23 +32,22 @@ class SupervisorSerializer(serializers.ModelSerializer):
 
 # Project Serializer
 class ProjectSerializer(serializers.ModelSerializer):
-    supervisor = SupervisorSerializer(read_only=True)  # For displaying supervisor details
+    supervisor = SupervisorSerializer(read_only=True)  # Display supervisor details
     supervisor_id = serializers.PrimaryKeyRelatedField(queryset=Supervisor.objects.all(), write_only=True)  # For incoming supervisor ID
 
     class Meta:
         model = Project
-        fields = '__all__'
+        fields = ['id', 'name', 'location', 'budget', 'timeline', 'supervisor', 'supervisor_id']
 
-    def create(self, validated_data):
-        supervisor_id = validated_data.pop('supervisor_id', None)  # Remove supervisor_id from validated data
-
-        project = Project.objects.create(**validated_data)  # Create the project instance
-
+    def validate(self, data):
+        # Validate supervisor_id if provided
+        supervisor_id = data.get('supervisor_id')
         if supervisor_id:
-            project.supervisor = Supervisor.objects.get(id=supervisor_id)  # Assign the supervisor based on ID
-
-        project.save()
-        return project
+            try:
+                Supervisor.objects.get(id=supervisor_id)  # Check if supervisor exists
+            except Supervisor.DoesNotExist:
+                raise serializers.ValidationError("Supervisor not found.")
+        return data
 
 
 # Resource Serializer
@@ -78,7 +78,7 @@ class WorkerSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
-        fields = ['name', 'resource', 'quantity_used', 'worker', 'project', 'supervisor', 'start_date', 'end_date', 'image', 'description']
+        fields = ['id', 'name', 'resource', 'quantity_used', 'worker', 'project', 'supervisor', 'start_date', 'end_date', 'image', 'description']
 
     def validate(self, data):
         resource = data.get('resource')
@@ -99,25 +99,52 @@ class TaskSerializer(serializers.ModelSerializer):
 
 
 # Profile Serializer
-class ProfileSerializer(serializers.ModelSerializer):
-    phone_number = serializers.CharField(source='manager.phone_number', required=False)  # Optional phone number field
+class ProjectSerializer(serializers.ModelSerializer):
+    supervisor = serializers.PrimaryKeyRelatedField(queryset=Supervisor.objects.all())
 
     class Meta:
-        model = User
-        fields = ('id', 'username', 'role', 'phone_number')
+        model = Project
+        fields = ['id', 'name', 'supervisor', 'location', 'budget', 'timeline']
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        
-        if instance.role == 'manager':  # If the user is a manager, get their phone number
-            manager = instance.manager_profile  # Assuming manager_profile is a related field on the User model
-            data['phone_number'] = manager.phone_number if manager else None
-
+    def validate(self, data):
+        # Validate supervisor_id if provided
+        supervisor_id = data.get('supervisor_id')
+        if supervisor_id:
+            try:
+                Supervisor.objects.get(id=supervisor_id)  # Check if supervisor exists
+            except Supervisor.DoesNotExist:
+                raise serializers.ValidationError("Supervisor not found.")
         return data
-
+        
 
 # Document Serializer
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = ['id', 'project', 'title', 'document_type', 'file', 'created_at']
+
+
+# Media Serializer
+class MediaSerializer(serializers.ModelSerializer):
+    # Optional: You can use the related model fields for convenience
+    supervisor_id = serializers.PrimaryKeyRelatedField(queryset=Supervisor.objects.all(), write_only=True)
+    manager_id = serializers.PrimaryKeyRelatedField(queryset=Manager.objects.all(), write_only=True)
+    
+    class Meta:
+        model = Media
+        fields = ['id', 'project', 'supervisor', 'manager', 'image', 'video', 'description', 'created_at']
+
+    def validate(self, data):
+        # Ensure either image or video is provided
+        if not data.get('image') and not data.get('video'):
+            raise serializers.ValidationError("Either image or video must be provided.")
+        
+        # Optional: Add file validation (file size, type, etc.)
+        if data.get('image'):
+            if not data['image'].name.endswith(('.jpg', '.jpeg', '.png')):
+                raise serializers.ValidationError("Image must be in JPG, JPEG, or PNG format.")
+        if data.get('video'):
+            if not data['video'].name.endswith(('.mp4', '.mkv', '.avi')):
+                raise serializers.ValidationError("Video must be in MP4, MKV, or AVI format.")
+        
+        return data

@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.db import transaction
+from django.conf import settings
+from django.utils import timezone
 
 # Custom User model
 class User(AbstractUser):
@@ -36,10 +38,8 @@ class Project(models.Model):
 
     def __str__(self):
         return self.name
-
 # Resource model
 class Resource(models.Model):
-    # Define the available resource types
     MATERIAL = 'material'
     EQUIPMENT = 'equipment'
     LABOR = 'labor'
@@ -97,20 +97,17 @@ class Task(models.Model):
 
     def save(self, *args, **kwargs):
         """ Ensure that sufficient resource quantity is available and save the task atomically """
-        # Ensure that the task has a valid resource
         if not self.resource:
             raise ValueError("A valid resource is required for the task.")
 
-        # Check if the resource has enough quantity
         if self.resource.quantity < self.quantity_used:
             raise ValueError(f"Insufficient quantity for resource {self.resource.name}. Available: {self.resource.quantity}, Required: {self.quantity_used}")
 
-        # Use atomic transaction to ensure that resource quantity is properly updated
+        # Using atomic transaction to ensure that resource quantity is properly updated
         with transaction.atomic():
             # Reduce the resource quantity
             self.resource.reduce_quantity(self.quantity_used)
 
-            # Call the superclass save method to save the task
             super().save(*args, **kwargs)
 
     def __str__(self):
@@ -122,8 +119,6 @@ class Document(models.Model):
         ('blueprint', 'Blueprint'),
         ('contract', 'Contract'),
         ('inspection_report', 'Inspection Report'),
-        ('video', 'Video'),
-        ('image', 'Image'),
     ]
     
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="documents")
@@ -134,4 +129,22 @@ class Document(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.get_document_type_display()})"
-#.............."end".............................
+
+# Media model
+class Media(models.Model):
+    project = models.ForeignKey('Project', on_delete=models.CASCADE, related_name="media_files")
+    supervisor = models.ForeignKey('Supervisor', on_delete=models.CASCADE, related_name="media_files")
+    manager = models.ForeignKey('Manager', on_delete=models.CASCADE, related_name="media_files")
+    image = models.ImageField(upload_to='media/images/%Y/%m/%d/', blank=True, null=True)
+    video = models.FileField(upload_to='media/videos/%Y/%m/%d/', blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Media for {self.project.name} by {self.supervisor.user.username} at {self.created_at}"
+
+    def save(self, *args, **kwargs):
+        if not self.created_at:
+            self.created_at = timezone.now()  # Ensure created_at is set correctly
+        super().save(*args, **kwargs)
+#88888#

@@ -2,12 +2,17 @@ from rest_framework import generics, viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
-from .models import Manager, Supervisor, Project, Task, User, Resource, Worker, Document
-from .serializers import ManagerSerializer, SupervisorSerializer, UserSerializer, ProjectSerializer, TaskSerializer, ResourceSerializer, WorkerSerializer, DocumentSerializer
+from .models import Manager, Supervisor, Project, Task, User, Resource, Worker, Document, Media
+from .serializers import ManagerSerializer, SupervisorSerializer, UserSerializer, ProjectSerializer, TaskSerializer, ResourceSerializer, WorkerSerializer, DocumentSerializer, MediaSerializer
 from django.db import IntegrityError, transaction
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, NotFound
 from rest_framework.decorators import action
+from .permissions import IsManager  # Custom permission for Manager access only
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Manager Registration View
 class ManagerRegisterView(generics.CreateAPIView):
@@ -96,37 +101,24 @@ class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
 
-    # Override the create method to handle the supervisor_id
     def perform_create(self, serializer):
-        supervisor_id = self.request.data.get('supervisor_id')
-
-        if supervisor_id:
+        supervisor_id = self.request.data.get('supervisor')
+        try:
             supervisor = Supervisor.objects.get(id=supervisor_id)
-            serializer.validated_data['supervisor'] = supervisor
-
-        serializer.save()
-
-    # Override the update method if you need to handle updates similarly
-    def perform_update(self, serializer):
-        supervisor_id = self.request.data.get('supervisor_id')
-
-        if supervisor_id:
-            supervisor = Supervisor.objects.get(id=supervisor_id)
-            serializer.validated_data['supervisor'] = supervisor
-
-        serializer.save()
-
+        except Supervisor.DoesNotExist:
+            raise serializers.ValidationError("Supervisor not found.")
+        # Ensure the supervisor is set correctly in the project instance
+        serializer.save(supervisor=supervisor)
 
 # Resource Viewset
 class ResourceViewSet(viewsets.ModelViewSet):
     queryset = Resource.objects.all()
     serializer_class = ResourceSerializer
 
-    # Custom action for reducing resource quantity
     @action(detail=True, methods=['post'])
     def reduce(self, request, pk=None):
-        resource = self.get_object()  # Get the resource instance
-        amount = request.data.get('amount')  # Get the amount to reduce
+        resource = self.get_object()
+        amount = request.data.get('amount')
         
         if not amount:
             return Response({"error": "Amount is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -141,20 +133,23 @@ class ResourceViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Custom action for restoring resource quantity
     @action(detail=True, methods=['post'])
     def restore(self, request, pk=None):
-        resource = self.get_object()  # Get the resource instance
-        amount = request.data.get('amount')  # Get the amount to restore
+        resource = self.get_object()
+        amount = request.data.get('amount')
         
         if not amount:
             return Response({"error": "Amount is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        resource.restore_quantity(amount)
-        return Response({
-            "message": "Quantity restored successfully",
-            "quantity": resource.quantity
-        }, status=status.HTTP_200_OK)
+        try:
+            resource.restore_quantity(amount)
+            return Response({
+                "message": "Quantity restored successfully",
+                "quantity": resource.quantity
+            }, status=status.HTTP_200_OK)
+        
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # Worker Viewset
@@ -259,13 +254,20 @@ class DocumentViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentSerializer
     permission_classes = [IsAuthenticated]
 
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])  # Action only for authenticated users
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def upload_document(self, request):
+        # Check if the user is a manager
+        if request.user.role != 'manager':
+            return Response({"detail": "You must be a manager to upload documents."}, status=403)
+
+        # Retrieve the project ID from the request
         project_id = request.data.get('project')
 
+        # Ensure the project ID is provided
         if not project_id:
             return Response({"detail": "Project ID is required."}, status=400)
 
+        # Check if the project exists
         try:
             project = Project.objects.get(id=project_id)
         except Project.DoesNotExist:
@@ -273,13 +275,68 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         # If supervisor is the user, return error
         if project.supervisor == request.user:
-            return Response({"detail": "Supervisors cannot upload documents for this project."}, status=403)
+            return Response({"detail": "Supervisors cannot upload documents for this project."}, status=400)
 
-        # Serialize the data and validate
-        serializer = self.get_serializer(data=request.data)
+        # Proceed with file upload logic (e.g., saving file to database or storage)
+        document = Document.objects.create(
+            project=project,
+            file=request.FILES.get('file'),
+            uploaded_by=request.user
+        )
+        
+        return Response({
+            "message": "Document uploaded successfully.",
+            "document_id": document.id
+        }, status=status.HTTP_201_CREATED)
 
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "Document uploaded successfully!"}, status=201)
 
-        return Response(serializer.errors, status=400)
+# Media Viewset
+
+class MediaViewSet(viewsets.ModelViewSet):
+    queryset = Media.objects.all()
+    serializer_class = MediaSerializer
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def upload_media(self, request):
+        # Ensure the media file (image or video) is provided
+        media_file = request.FILES.get('file')
+        project_id = request.data.get('project')
+        supervisor_id = request.data.get('supervisor')
+        manager_id = request.data.get('manager')
+        description = request.data.get('description', '')
+
+        if not media_file:
+            return Response({"error": "Media file is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate that the project, supervisor, and manager exist
+        try:
+            project = Project.objects.get(id=project_id)
+            supervisor = Supervisor.objects.get(id=supervisor_id)
+            manager = Manager.objects.get(id=manager_id)
+        except (Project.DoesNotExist, Supervisor.DoesNotExist, Manager.DoesNotExist):
+            return Response({"error": "Invalid project, supervisor, or manager ID."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create the Media instance based on the provided data
+        media = Media.objects.create(
+            project=project,
+            supervisor=supervisor,
+            manager=manager,
+            description=description
+        )
+
+        # Assign the image or video file
+        if media_file.name.endswith(('.jpg', '.jpeg', '.png')):
+            media.image = media_file
+        elif media_file.name.endswith(('.mp4', '.mkv', '.avi')):
+            media.video = media_file
+        else:
+            return Response({"error": "Invalid file format. Only image and video files are allowed."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Save the media object
+        media.save()
+
+        return Response({
+            "message": "Media uploaded successfully.",
+            "media_id": media.id
+        }, status=status.HTTP_201_CREATED)
