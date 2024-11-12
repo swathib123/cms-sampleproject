@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ManagerRegisterView, SupervisorRegisterView,ManagerProfileView, CustomAuthToken, ProjectViewSet, TaskViewSet,ResourceViewSet,WorkerViewSet
+from .views import ManagerRegisterView, SupervisorRegisterView,ManagerProfileView,DocumentViewSet, CustomAuthToken, ProjectViewSet, TaskViewSet,ResourceViewSet,WorkerViewSet
 from django.conf import settings
 from django.conf.urls.static import static
 urlpatterns = [
@@ -15,6 +15,8 @@ urlpatterns = [
     path('resources/<int:pk>/', ResourceViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='resource-detail'),
     path('workers/', WorkerViewSet.as_view({'get': 'list', 'post': 'create'}), name='worker-list'),
     path('workers/<int:pk>/', WorkerViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='worker-detail'),
+    path('documents/', DocumentViewSet.as_view({'get': 'list', 'post': 'create'}), name='document-list'),
+
 
 ]
 if settings.DEBUG:

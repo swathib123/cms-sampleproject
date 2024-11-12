@@ -2,12 +2,12 @@ from rest_framework import generics, viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
-from .models import Manager, Supervisor, Project, Task2, User, Resource, Worker
-from .serializers import ManagerSerializer, SupervisorSerializer, UserSerializer, ProjectSerializer, TaskSerializer, ResourceSerializer, WorkerSerializer
-from django.db import IntegrityError
-from django.db import transaction
+from .models import Manager, Supervisor, Project, Task, User, Resource, Worker, Document
+from .serializers import ManagerSerializer, SupervisorSerializer, UserSerializer, ProjectSerializer, TaskSerializer, ResourceSerializer, WorkerSerializer, DocumentSerializer
+from django.db import IntegrityError, transaction
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
+from rest_framework.decorators import action
 
 # Manager Registration View
 class ManagerRegisterView(generics.CreateAPIView):
@@ -91,100 +91,85 @@ class CustomAuthToken(ObtainAuthToken):
         }, status=status.HTTP_200_OK)
 
 
+# Project Viewset
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
 
-    # Override the create method to only handle the supervisor_id
+    # Override the create method to handle the supervisor_id
     def perform_create(self, serializer):
-        # Extract supervisor_id from the request data
         supervisor_id = self.request.data.get('supervisor_id')
 
-        # If supervisor_id is passed, set the supervisor for the project
         if supervisor_id:
             supervisor = Supervisor.objects.get(id=supervisor_id)
             serializer.validated_data['supervisor'] = supervisor
 
-        # Save the project with the supervisor set
         serializer.save()
 
-    # Override the update method if you need to handle updates in the same way
+    # Override the update method if you need to handle updates similarly
     def perform_update(self, serializer):
-        # Extract supervisor_id from the request data
         supervisor_id = self.request.data.get('supervisor_id')
 
-        # If supervisor_id is passed, set the supervisor for the project
         if supervisor_id:
             supervisor = Supervisor.objects.get(id=supervisor_id)
             serializer.validated_data['supervisor'] = supervisor
 
-        # Save the project with the updated supervisor
         serializer.save()
 
 
-
+# Resource Viewset
 class ResourceViewSet(viewsets.ModelViewSet):
     queryset = Resource.objects.all()
     serializer_class = ResourceSerializer
 
-    def perform_create(self, serializer):
-        """
-        Override the default create method to handle custom logic 
-        when creating a resource, if needed.
-        """
-        # You can add any custom logic here, for example, 
-        # logging or performing additional actions before saving.
-        serializer.save()
-
-    def perform_update(self, serializer):
-        """
-        Override the default update method to handle custom logic 
-        when updating a resource, if needed.
-        """
-        # For example, you might want to add a check here 
-        # if the quantity goes below a certain threshold.
-        resource = serializer.save()
-        if resource.quantity < 0:
-            raise ValidationError("Quantity cannot be negative.")
+    # Custom action for reducing resource quantity
+    @action(detail=True, methods=['post'])
+    def reduce(self, request, pk=None):
+        resource = self.get_object()  # Get the resource instance
+        amount = request.data.get('amount')  # Get the amount to reduce
         
-    def perform_destroy(self, instance):
-        """
-        Override the destroy method to add custom logic when deleting a resource.
-        For example, you could prevent deletion if the resource is in use.
-        """
-        # Add custom logic before deleting a resource, if necessary.
-        if instance.quantity > 0:
-            raise ValidationError("Cannot delete a resource with remaining quantity.")
-        instance.delete()
+        if not amount:
+            return Response({"error": "Amount is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            resource.reduce_quantity(amount)
+            return Response({
+                "message": "Quantity reduced successfully",
+                "quantity": resource.quantity
+            }, status=status.HTTP_200_OK)
+        
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Custom action for restoring resource quantity
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        resource = self.get_object()  # Get the resource instance
+        amount = request.data.get('amount')  # Get the amount to restore
+        
+        if not amount:
+            return Response({"error": "Amount is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        resource.restore_quantity(amount)
+        return Response({
+            "message": "Quantity restored successfully",
+            "quantity": resource.quantity
+        }, status=status.HTTP_200_OK)
+
 
 # Worker Viewset
-
 class WorkerViewSet(viewsets.ModelViewSet):
-    """
-    A viewset for viewing and editing Worker instances.
-    """
-    queryset = Worker.objects.all()  # This gets all Worker objects from the database
-    serializer_class = WorkerSerializer  # This tells DRF to use WorkerSerializer for serialization
+    queryset = Worker.objects.all() 
+    serializer_class = WorkerSerializer
+    permission_classes = [IsAuthenticated]  # Optional: Restrict access to authenticated users
 
-    # Optional: If you want to restrict access to authenticated users
-    permission_classes = [IsAuthenticated]
-
-    # Optional: If you want to customize the query (filtering, ordering, etc.)
-    # def get_queryset(self):
-    #     user = self.request.user
-    #     return Worker.objects.filter(user=user)  # Example of filtering by user
 
 # Task Viewset
 class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task2.objects.all()
+    queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
     def perform_create(self, serializer):
-        """
-        Override the default create method to handle the logic 
-        for reducing resource quantity and checking its availability.
-        """
-        # Get the resource and quantity from the validated data
         resource = serializer.validated_data.get('resource')
         quantity_used = serializer.validated_data.get('quantity_used')
 
@@ -192,66 +177,47 @@ class TaskViewSet(viewsets.ModelViewSet):
         if resource.quantity < quantity_used:
             raise ValidationError(f"Insufficient quantity for resource {resource.name}. Available: {resource.quantity}")
 
-        # Start a transaction to ensure atomicity (consistency of resource usage)
+        # Use a transaction to lock the resource and ensure atomicity
         with transaction.atomic():
-            # Lock the resource to prevent race conditions
             try:
                 resource = Resource.objects.select_for_update().get(id=resource.id)
             except Resource.DoesNotExist:
                 raise ValidationError(f"Resource {resource.name} does not exist.")
             
-            # Check if the resource has enough quantity again after locking
             if resource.quantity < quantity_used:
                 raise ValidationError(f"Insufficient quantity for resource {resource.name}. Available: {resource.quantity}")
 
-            # Reduce the resource quantity
             resource.quantity -= quantity_used
             resource.save()
 
-            # Create the task instance using the serializer
             serializer.save()
 
     def perform_update(self, serializer):
-        """
-        Override the default update method to ensure that resources are correctly handled during updates.
-        """
-        # Get the resource and quantity from the validated data
         resource = serializer.validated_data.get('resource')
         quantity_used = serializer.validated_data.get('quantity_used')
 
-        # If the resource quantity is changed, we need to check it again
         if resource and quantity_used is not None:
             old_quantity_used = serializer.instance.quantity_used if serializer.instance else 0
 
-            # If the quantity_used is changed, we need to update the resource quantity accordingly
             if quantity_used != old_quantity_used:
-                # If the new quantity used is greater, we need to check if the resource has enough quantity
                 if resource.quantity < quantity_used:
                     raise ValidationError(f"Insufficient quantity for resource {resource.name}. Available: {resource.quantity}")
 
-                # Start a transaction to ensure atomicity (consistency of resource usage)
                 with transaction.atomic():
                     try:
                         resource = Resource.objects.select_for_update().get(id=resource.id)
                     except Resource.DoesNotExist:
                         raise ValidationError(f"Resource {resource.name} does not exist.")
 
-                    # Adjust the resource quantity (take the difference)
                     if quantity_used > old_quantity_used:
                         resource.quantity -= (quantity_used - old_quantity_used)
                     else:
                         resource.quantity += (old_quantity_used - quantity_used)
                     resource.save()
 
-        # Save the updated task
         serializer.save()
 
     def perform_destroy(self, instance):
-        """
-        Handle custom logic before destroying a task instance.
-        For example, if we want to undo the resource quantity changes when deleting a task.
-        """
-        # If the task is deleted, we can optionally update the resource quantity to add back the used quantity
         if instance.resource:
             resource = instance.resource
             with transaction.atomic():
@@ -260,12 +226,11 @@ class TaskViewSet(viewsets.ModelViewSet):
                 except Resource.DoesNotExist:
                     raise ValidationError(f"Resource {resource.name} does not exist.")
                 
-                # Return the used quantity to the resource
                 resource.quantity += instance.quantity_used
                 resource.save()
 
-        # Call the default destroy method to delete the task
         instance.delete()
+
 
 # Manager Profile View
 class ManagerProfileView(generics.RetrieveAPIView):
@@ -275,9 +240,8 @@ class ManagerProfileView(generics.RetrieveAPIView):
     def get(self, request):
         user = request.user
         
-        # Get the manager profile
         try:
-            manager = user.manager_profile  # Assuming user is linked to manager profile
+            manager = user.manager_profile
         except Manager.DoesNotExist:
             return Response({"error": "Manager profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -287,3 +251,35 @@ class ManagerProfileView(generics.RetrieveAPIView):
             "department": manager.department,
             "phone_number": manager.phone_number
         })
+
+
+# Document Viewset
+class DocumentViewSet(viewsets.ModelViewSet):
+    queryset = Document.objects.all()
+    serializer_class = DocumentSerializer
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])  # Action only for authenticated users
+    def upload_document(self, request):
+        project_id = request.data.get('project')
+
+        if not project_id:
+            return Response({"detail": "Project ID is required."}, status=400)
+
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return Response({"detail": "Project not found."}, status=404)
+
+        # If supervisor is the user, return error
+        if project.supervisor == request.user:
+            return Response({"detail": "Supervisors cannot upload documents for this project."}, status=403)
+
+        # Serialize the data and validate
+        serializer = self.get_serializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Document uploaded successfully!"}, status=201)
+
+        return Response(serializer.errors, status=400)
