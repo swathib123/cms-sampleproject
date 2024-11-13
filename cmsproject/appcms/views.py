@@ -10,7 +10,6 @@ from rest_framework.exceptions import ValidationError, NotFound
 from rest_framework.decorators import action
 from .permissions import IsManager  # Custom permission for Manager access only
 import logging
-
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -154,10 +153,30 @@ class ResourceViewSet(viewsets.ModelViewSet):
 
 # Worker Viewset
 class WorkerViewSet(viewsets.ModelViewSet):
-    queryset = Worker.objects.all() 
+    queryset = Worker.objects.all()
     serializer_class = WorkerSerializer
-    permission_classes = [IsAuthenticated]  # Optional: Restrict access to authenticated users
+    permission_classes = [IsAuthenticated]  # Only authenticated users can access the API
 
+    def create(self, request, *args, **kwargs):
+        # Extract Aadhar number from the request data
+        aadhar_number = request.data.get('aadhar_number')
+
+        # Check if the worker already exists by Aadhar number
+        if Worker.objects.filter(aadhar_number=aadhar_number).exists():
+            return Response(
+                {"detail": "A worker with this Aadhar number already exists."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Optionally, you can check based on other fields like the name:
+        # if Worker.objects.filter(name=request.data.get('name')).exists():
+        #     return Response(
+        #         {"detail": "A worker with this name already exists."},
+        #         status=status.HTTP_400_BAD_REQUEST
+        #     )
+
+        # If the validation passes, proceed with normal creation
+        return super().create(request, *args, **kwargs)
 
 # Task Viewset
 class TaskViewSet(viewsets.ModelViewSet):

@@ -3,7 +3,8 @@ from django.contrib.auth.models import AbstractUser
 from django.db import transaction
 from django.conf import settings
 from django.utils import timezone
-
+from django.core.exceptions import ValidationError
+import re
 # Custom User model
 class User(AbstractUser):
     ROLE_CHOICES = [
@@ -79,8 +80,19 @@ class Worker(models.Model):
     aadhar_number = models.CharField(max_length=12, unique=True)  # Assuming Aadhar number is unique
     is_working = models.BooleanField(default=False)
 
+    def clean(self):
+        """Custom validation for Aadhar number format"""
+        if not re.match(r'^\d{12}$', self.aadhar_number):
+            raise ValidationError("Aadhar number must be exactly 12 digits.")
+
     def __str__(self):
         return self.name
+
+    class Meta:
+        db_table = 'worker'  # Optional: customize table name
+        verbose_name = 'Worker'
+        verbose_name_plural = 'Workers'
+
 
 # Task model
 class Task(models.Model):
@@ -147,4 +159,4 @@ class Media(models.Model):
         if not self.created_at:
             self.created_at = timezone.now()  # Ensure created_at is set correctly
         super().save(*args, **kwargs)
-#88888#
+#**** end ****

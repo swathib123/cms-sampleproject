@@ -31,7 +31,7 @@ class SupervisorSerializer(serializers.ModelSerializer):
 
 
 # Project Serializer
-class ProjectSerializer(serializers.ModelSerializer):
+"""class ProjectSerializer(serializers.ModelSerializer):
     supervisor = SupervisorSerializer(read_only=True)  # Display supervisor details
     supervisor_id = serializers.PrimaryKeyRelatedField(queryset=Supervisor.objects.all(), write_only=True)  # For incoming supervisor ID
 
@@ -47,7 +47,7 @@ class ProjectSerializer(serializers.ModelSerializer):
                 Supervisor.objects.get(id=supervisor_id)  # Check if supervisor exists
             except Supervisor.DoesNotExist:
                 raise serializers.ValidationError("Supervisor not found.")
-        return data
+        return data"""
 
 
 # Resource Serializer
@@ -115,7 +115,6 @@ class ProjectSerializer(serializers.ModelSerializer):
             except Supervisor.DoesNotExist:
                 raise serializers.ValidationError("Supervisor not found.")
         return data
-        
 
 # Document Serializer
 class DocumentSerializer(serializers.ModelSerializer):
